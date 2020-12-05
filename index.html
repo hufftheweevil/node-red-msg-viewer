@@ -1,0 +1,185 @@
+<script type="text/javascript">
+  const TAB = $('<div>').css({
+    position: 'relative',
+    height: '100%'
+  })
+
+  $('<div>', { class: 'red-ui-sidebar-header' })
+    .html(
+      '<div class="red-ui-sidebar-header"><span class="button-group"><a id="red-ui-sidebar-debug-filter" class="red-ui-sidebar-header-button" href="#"><i class="fa fa-filter"></i> <span>all nodes</span></a></span><span class="button-group"><a id="red-ui-sidebar-debug-clear" class="red-ui-sidebar-header-button" href="#"><i class="fa fa-trash"></i></a></span><div class="red-ui-debug-filter-box hide"><div class="red-ui-debug-filter-row"><span class="button-group"><a class="red-ui-sidebar-header-button-toggle red-ui-sidebar-debug-filter-option selected" id="red-ui-sidebar-debug-filterAll" href="#"><span data-i18n="node-red:debug.sidebar.filterAll">all nodes</span></a><a class="red-ui-sidebar-header-button-toggle red-ui-sidebar-debug-filter-option" id="red-ui-sidebar-debug-filterSelected" href="#"><span data-i18n="node-red:debug.sidebar.filterSelected">selected nodes</span></a><a class="red-ui-sidebar-header-button-toggle red-ui-sidebar-debug-filter-option" id="red-ui-sidebar-debug-filterCurrent" href="#"><span data-i18n="node-red:debug.sidebar.filterCurrent">current flow</span></a> </span></div><div class="red-ui-debug-filter-row hide" id="red-ui-sidebar-debug-filter-node-list-row"><div class="red-ui-editableList red-ui-nodeList"><div class="red-ui-editableList-border"><div class="red-ui-editableList-header"><span data-i18n="node-red:debug.sidebar.debugNodes">Debug nodes</span><span><span class="red-ui-checkboxSet"><input type="checkbox"><span class="red-ui-checkboxSet-option hide"><i class="fa fa-square-o"></i></span><span class="red-ui-checkboxSet-option hide"><i class="fa fa-check-square-o"></i></span><span class="red-ui-checkboxSet-option hide"><i class="fa fa-minus-square-o"></i></span></span></span></div><div class="red-ui-editableList-container" style="min-height: 250px; max-height: 250px; overflow-y: scroll;"><ol style="text-align: left; min-height: 0px; max-height: 250px; height: auto;" class="red-ui-editableList-list"></ol></div></div></div></div></div></div>'
+    )
+    .appendTo(TAB)
+
+  let content = $('<div>').addClass('red-ui-debug-content red-ui-debug-content-list').appendTo(TAB)
+
+  // Add tab
+  RED.sidebar.addTab({
+    id: 'msg-viewer',
+    label: ' msgs',
+    name: 'Msg Viewer',
+    enableOnEdit: true,
+    iconClass: 'fa fa-th-list',
+    content: TAB,
+    toolbar: $(
+      '<div>' +
+        '<span class="button-group"><a id="red-ui-sidebar-debug-open" class="red-ui-footer-button" href="#"><i class="fa fa-desktop"></i></a></span> ' +
+        '</div>'
+    )
+  })
+
+  let socket
+  function connect() {
+    let socket = new WebSocket(`ws://${window.location.hostname}:8121/`)
+    socket.onopen = () => {
+      // console.log('open')
+    }
+    socket.onmessage = message => {
+      let { hook, data } = JSON.parse(message.data)
+      if (hook == 'onSend') data.forEach(d => processData(hook, d))
+      else processData(hook, data)
+    }
+    socket.onclose = () => {
+      console.log('close, attempt reopen')
+      setTimeout(() => socket.readyState !== WebSocket.OPEN && connect(), 5000)
+    }
+  }
+  connect()
+
+  let hooks = ['preRoute', 'preDeliver', 'postDeliver', 'onReceive', 'postReceive', 'onComplete']
+
+  const msgs = {}
+
+  function makeID(data) {
+    return [data.msg._msgid, data.destination ? data.destination.id : data.node.id]
+      .join('-')
+      .replace(/\./g, '-')
+  }
+
+  function processData(hook, data) {
+    console.log(hook, data)
+    const ID = makeID(data)
+    if (!msgs[ID]) {
+      if (!data.source) {
+        // Must be inject starter, ignore
+        return
+      }
+      newMsg(data)
+    }
+    const msg = msgs[ID]
+
+    msg[hook] = data
+    if (data.destination && data.destination.node && !msg.destination)
+      msg.destination = data.destination.node
+    drawRow(ID)
+  }
+
+  function newMsg(data) {
+    const ID = makeID(data)
+    msgs[ID] = {
+      ts: new Date(),
+      source: data.source.node,
+      msgid: data.msg._msgid,
+      destination: data.destination.node,
+      msg: data.msg,
+      msgStr: JSON.stringify(data.msg)
+    }
+  }
+
+  function drawRow(ID) {
+    let msg = msgs[ID]
+
+    // META part
+    let meta = $('<div>', { class: 'red-ui-debug-msg-meta' })
+
+    $('<span>', { class: 'red-ui-debug-msg-date' }).text(msg.ts.toLocaleString()).appendTo(meta)
+    let nodes = $('<span>', { class: 'red-ui-debug-msg-topic' }).appendTo(meta)
+    function appendNodeLink(node) {
+      if (!node) return
+      $('<span>')
+        .css({ cursor: 'pointer' })
+        .text(node.name || node.id)
+        .appendTo(nodes)
+        .on('click', function (e) {
+          e.preventDefault()
+          nodeClick(node)
+        })
+    }
+    appendNodeLink(msg.source)
+    $('<i>', { class: 'fa fa-arrow-right' }).css({ padding: '0 7px' }).appendTo(nodes)
+    appendNodeLink(msg.destination)
+
+    // MSG/"PAYLOAD" part
+
+    let payload = $('<span>', { class: 'red-ui-debug-msg-payload' })
+    msg.msg && RED.utils.createObjectElement(msg.msg).appendTo(payload)
+
+    // ENTIRE BLOCK
+
+    let row = $(`#${ID}`)
+    if (!row.length)
+      row = $('<div>', { id: ID, class: 'red-ui-debug-msg' })
+        .appendTo(content)
+        .on('mouseenter', () => messageHover(ID, true))
+        .on('mouseleave', () => messageHover(ID, false))
+
+    row.empty().append([meta, payload])
+  }
+
+  function messageHover(ID, isHovering) {
+    let msg = msgs[ID]
+    $(`#${ID}`)[isHovering ? 'addClass' : 'removeClass']('red-ui-debug-msg-hover')
+
+    let nodes = [msg.source, msg.destination]
+    nodes.forEach(node => {
+      if (!node) return
+      // highlight the top-level node (could be subflow instance)
+      highlightNode(node.id, isHovering)
+      if (node._alias) {
+        // this is inside a subflow - highlight the node itself
+        highlightNode(node._alias, isHovering)
+      }
+      // if path.length > 2, we are nested - highlight subflow instances
+      // for (var i = 2; i < node.path.length; i++) {
+      //   highlightNode(node.path[i], isHovering)
+      // }
+    })
+
+    RED.view.redraw()
+  }
+
+  function highlightNode(nodeId, highlight) {
+    if (!nodeId) return
+    let n = RED.nodes.node(nodeId)
+    if (!n) return
+    n.highlighted = highlight
+    n.dirty = true
+  }
+
+  function nodeClick(node) {
+    // Get all of the nodes that could have logged this message
+    var candidateNodes = [RED.nodes.node(node.id)]
+    if (node.path) {
+      for (var i = 2; i < node.path.length; i++) {
+        candidateNodes.push(RED.nodes.node(node.path[i]))
+      }
+    }
+    if (node._alias) {
+      candidateNodes.push(RED.nodes.node(node._alias))
+    }
+    if (candidateNodes.length > 1) {
+      // The node is in a subflow. Check to see if the active
+      // workspace is a subflow in the node's parentage. If
+      // so, reveal the relevant subflow instance node.
+      var ws = RED.workspaces.active()
+      for (var i = 0; i < candidateNodes.length; i++) {
+        if (candidateNodes[i].z === ws) {
+          RED.view.reveal(candidateNodes[i].id)
+          return
+        }
+      }
+      // The active workspace is unrelated to the node. So
+      // fall back to revealing the top most node
+    }
+    RED.view.reveal(candidateNodes[0].id)
+  }
+</script>

@@ -1,0 +1,36 @@
+<html>
+  <head>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="msgs/client.js"></script>
+    <link rel="stylesheet" href="red/style.min.css" />
+    <style>
+      table {
+        border-collapse: collapse;
+      }
+      table tr td {
+        border: solid 1px;
+        padding: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="red-ui-editor">
+      <table class="red-ui-info-table">
+        <thead>
+          <tr>
+            <td>Message</td>
+            <td>Source</td>
+            <td>Destination</td>
+            <td>preRoute</td>
+            <td>preDeliver</td>
+            <td>postDeliver</td>
+            <td>onReceive</td>
+            <td>postReceive</td>
+            <td>onComplete</td>
+          </tr>
+        </thead>
+        <tbody id="main-table"></tbody>
+      </table>
+    </div>
+  </body>
+</html>
